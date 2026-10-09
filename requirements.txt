@@ -1,0 +1,14 @@
+langchain>=1.0
+langchain-groq>=1.0
+python-dotenv>=1.0
+streamlit>=1.40
+cryptography>=42
+python-docx>=1.1
+reportlab>=4.0
+Pillow>=10.0
+markdown>=3.5
+pypdf>=4.0
+# only needed for upload_file (Google Drive):
+google-api-python-client>=2.100
+google-auth-httplib2>=0.2
+google-auth-oauthlib>=1.2

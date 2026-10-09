@@ -1,0 +1,100 @@
+CODING COMPANION - PLAN                                             (BCSF24M029)
+=============================================================================
+Stack: LangChain create_agent + Groq openai/gpt-oss-120b (developed and tested on it),
+Streamlit GUI. Files: config.py, sandbox.py, sandbox_runner.py, tools.py, throttle.py,
+llm.py, agent.py, app.py, .env, .gitignore, requirements.txt, README.md, PLAN.txt,
+.streamlit/config.toml.
+
+1. EVERY TOOL (13 total: 3 starter + 10 from my mind map; no other tools)
+-----------------------------------------------------------------------------
+ 1. list_files(path)            Lists files/folders (with sizes) inside the working folder.
+ 2. read_file(path, offset)     Returns the text of a file (long files paged by offset).
+ 3. write_file(path, content)   Creates or overwrites a file; creates missing folders.
+ 4. execute_file(path, arguments, timeout)
+                                Runs a .py file inside the sandbox; returns the REAL exit code,
+                                stdout and stderr. 30 s default timeout (max 60).
+ 5. delete_file(path)           Only QUEUES a deletion. The file is deleted only after the user
+                                clicks Approve in the UI (terminal: answers y). Agent can't self-approve.
+ 6. create_folder(path, files)  Creates a project folder, plus optional files {name: content}
+                                inside it (README.md stub if none given).
+ 7. convert_files(path, new_extension)
+                                Converts to another extension only if possible: csv<->json,
+                                md->html, html->txt, docx->txt/md, txt/md->docx, image formats
+                                (png/jpg/webp/bmp/gif), plain text<->text (json target must be
+                                valid JSON). Otherwise returns a clear error. Original is kept.
+ 8. create_pdf(path, output)    Makes a PDF from a Word .docx (also .txt/.md): headings,
+                                bold/italic, lists, simple tables.
+ 9. create_summary(path)        Reads the file (txt/code/docx/pdf), asks the model to summarize it
+                                in a separate small call, saves <name>_summary.md in the folder.
+10. encrypt_file(path, password)  Encrypts the file (Fernet/AES + PBKDF2 key from the user's
+                                password) and overwrites it with the encrypted text.
+11. decrypt_file(path, password, overwrite)  Decrypts and returns plain text; with overwrite=True
+                                also restores the plain text into the file. Wrong password = no change.
+12. upload_file(path, drive_folder_id)  Uploads a file from the folder to Google Drive (OAuth
+                                credentials.json; reports a clear error if Drive isn't set up).
+13. rename_file(path, new_name) Renames a file/folder in place (no overwrite, no slashes in the name).
+
+2. EVERY CHANGE TO THE STARTER TOOLS
+-----------------------------------------------------------------------------
+ * starter_tools.py is replaced by tools.py (same three tools, extended).
+ * All tools: paths go through safe_path(): relative to WORK_DIR; "..", absolute paths, other
+   drives and symlinks that leave the folder are refused with "Access denied ... outside the
+   working folder". (Starter tools had no such check.)
+ * All tools: any exception is returned as a short "Error: ..." string (never crashes the agent).
+ * list_files: folders first, file sizes shown, max 150 entries, error if the path is a file.
+ * read_file: output capped at 6000 chars with an `offset` parameter to continue (saves tokens);
+   clear error for binary / non-UTF-8 files and for folders/missing files.
+ * write_file: refuses a folder path; reports lines and chars written; writes LF newlines.
+
+3. RULES MY SYSTEM PROMPT GIVES THE AGENT (short prompt = fewer tokens)
+-----------------------------------------------------------------------------
+ 1. One folder: relative paths only; refuse anything outside (.., absolute, other drives);
+    never write code that touches anything outside.
+ 2. Files: may list/read/create/edit/overwrite files of any type inside the folder.
+ 3. Delete only when the user explicitly asks; delete_file only queues - say "pending",
+    never "deleted".
+ 4. Honesty: never claim to have read/written/changed/run/converted/encrypted/deleted
+    anything unless a tool did it this turn; report real output and errors faithfully.
+ 5. Unclear request or missing detail: ask ONE short question instead of guessing; never
+    invent files (list first if unsure).
+ 6. Workflow: create+run = write_file -> execute_file -> show real output;
+    edit = read_file -> write_file (complete new content) -> execute_file again if asked.
+ 7. Token efficiency: don't re-read what was just written, don't repeat file contents,
+    short answers; if a tool fails retry once or twice then explain.
+ 8. Passwords for encrypt/decrypt must come from the user.
+
+4. EVERYTHING ELSE THE AGENT / PROJECT DOES BEYOND THE RULES
+-----------------------------------------------------------------------------
+ Safety
+ * sandbox_runner.py: agent-written code runs in a child process with a Python audit hook that
+   blocks reading/writing/listing/deleting/renaming/copying outside WORK_DIR (reading the Python
+   install itself is allowed), blocks subprocess/os.system/exec/fork/symlinks/ctypes loading;
+   API keys/tokens/passwords are removed from the child's environment; stdin closed; timeout.
+ * config.py: reads API_KEY and WORK_DIR from .env; refuses to start if WORK_DIR is missing,
+   not an absolute path, or is the project folder / a parent of it (agent must not reach its
+   own code or key).
+ * Deletion approval is human-in-the-loop in the UI (Approve / Deny buttons); the result is
+   written into the chat memory so the agent knows what happened.
+ Tokens (8K tokens/min, 200K/day; whole conversation is resent every call)
+ * throttle.py: estimates each call's size, waits (with a countdown in the GUI) when the last
+   60 seconds are too full, instead of failing; counts session tokens/calls (shown in sidebar).
+ * agent.py compaction: only the last 4 user turns are kept; in older turns long tool results
+   and large file contents inside tool calls are clipped; the newest turn stays complete.
+ * llm.py: temperature 0, reasoning_effort=low, max output 2000 tokens (configurable).
+ * Tool docstrings are terse; tool outputs are capped (read 6000 chars, program output 3000).
+ Recovery (agent must not stop midway, and if it does, it recovers)
+ * Progress is streamed and kept; on HTTP 429 the agent waits the time Groq asks for and
+   continues from where it was (up to 4 times); malformed tool calls are retried with a nudge;
+   temporary network/5xx errors are retried; "request too large" triggers a harder context trim;
+   daily-limit / bad-key / step-limit give a plain explanation and the chat stays usable.
+ Conversation
+ * Multi-turn memory for one session; "New chat" resets it.
+ GUI (Streamlit, app.py)
+ * Chat with live "tool activity" (each tool call and its real result), example prompts,
+   file upload into the working folder, file list with preview and download, delete approval
+   cards, token meter, New chat / Refresh buttons, dark theme (.streamlit/config.toml).
+ * Terminal mode also available: `python agent.py` (same agent, same rules).
+ Other
+ * .gitignore (keeps .env, credentials.json, token.json, venv out of git), README.md,
+   requirements.txt.
+ * execute_file runs Python only (the only language I can guard reliably).

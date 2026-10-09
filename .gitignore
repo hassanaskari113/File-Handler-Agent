@@ -1,0 +1,23 @@
+# secrets
+.env
+credentials.json
+token.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# tools / OS
+.streamlit/secrets.toml
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# agent working folder if you keep it inside the project
+work_folder/
+*.zip
